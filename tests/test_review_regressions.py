@@ -5,6 +5,8 @@ import tempfile
 import unittest
 
 from migrateglass import Limits, rehearse
+from migrateglass.engine import Engine, RehearsalError
+from dataclasses import asdict
 
 
 class ReviewRegressions(unittest.TestCase):
@@ -60,6 +62,27 @@ class ReviewRegressions(unittest.TestCase):
         ]:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 rehearse(self.path, "SELECT 1;", **kwargs)
+
+    def test_many_small_values_exceed_aggregate_result_budget(self):
+        self.create("CREATE TABLE seed(value INTEGER); INSERT INTO seed VALUES(1);")
+        sql = "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<2000) SELECT printf('%020000d',x) FROM n;"
+        report = rehearse(self.path, sql, limits=Limits(seconds=30))
+        self.assertEqual(report["decision"], "REJECT", report)
+        self.assertIn("RESULT_BYTES_LIMIT", {item["code"] for item in report["findings"]})
+
+    def test_exact_aggregate_result_boundary(self):
+        engine = Engine({"limits": asdict(Limits(result_bytes=58))})
+        self.addCleanup(engine.conn.close)
+        self.assertEqual(engine.guarded("SELECT '1234567890'")[0], [("1234567890",)])
+        with self.assertRaisesRegex(RehearsalError, "RESULT_BYTES_LIMIT"):
+            engine.guarded("SELECT '12345678901'")
+
+    def test_result_budget_counts_null_cells_and_unicode_bytes(self):
+        engine = Engine({"limits": asdict(Limits(result_bytes=50))})
+        self.addCleanup(engine.conn.close)
+        self.assertEqual(engine.guarded("SELECT NULL")[0], [(None,)])
+        with self.assertRaisesRegex(RehearsalError, "RESULT_BYTES_LIMIT"):
+            engine.guarded("SELECT '中'")
 
 
 if __name__ == "__main__":

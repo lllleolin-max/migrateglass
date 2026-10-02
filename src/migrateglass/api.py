@@ -21,6 +21,7 @@ class Limits:
     rows: int = 200_000
     statements: int = 1000
     value_bytes: int = 1024 * 1024
+    result_bytes: int = 16 * 1024 * 1024
 
     def validate(self):
         if isinstance(self.seconds, bool) or not isinstance(self.seconds, (int, float)) or not math.isfinite(self.seconds) or not 0 < self.seconds <= 600:

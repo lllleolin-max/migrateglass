@@ -122,12 +122,7 @@ class Engine:
         self.conn.set_authorizer(self.authorizer)
         try:
             cursor = self.conn.execute(sql)
-            rows = []
-            for row in cursor:
-                if len(rows) >= self.limits["rows"]:
-                    raise RehearsalError("ROW_LIMIT")
-                rows.append(row)
-            return rows, [x[0] for x in cursor.description or []]
+            return self.collect(cursor), [x[0] for x in cursor.description or []]
         except sqlite3.Error as error:
             code = self.reason or self.denial or ("CONSTRAINT_FAILED" if isinstance(error, sqlite3.IntegrityError) else "SQL_ERROR")
             raise RehearsalError(code) from error
@@ -135,8 +130,31 @@ class Engine:
             self.conn.set_authorizer(None)
             self.readonly = False
 
+    def collect(self, cursor):
+        """Bound aggregate fetched payload, not just each individual SQLite cell.
+
+        Accounting includes 32 bytes per row, 16 per cell, raw UTF-8/blob bytes,
+        and 8 bytes per numeric value. This is an admission budget, not RSS.
+        """
+        rows, size = [], 0
+        for row in cursor:
+            if len(rows) >= self.limits["rows"]:
+                raise RehearsalError("ROW_LIMIT")
+            size += 32 + 16 * len(row)
+            for value in row:
+                if isinstance(value, str):
+                    size += len(value.encode("utf-8"))
+                elif isinstance(value, bytes):
+                    size += len(value)
+                elif value is not None:
+                    size += 8
+            if size > self.limits["result_bytes"]:
+                raise RehearsalError("RESULT_BYTES_LIMIT")
+            rows.append(row)
+        return rows
+
     def audit(self):
-        integrity = self.conn.execute("PRAGMA integrity_check").fetchall()
+        integrity = self.collect(self.conn.execute("PRAGMA integrity_check"))
         if integrity != [("ok",)]:
             raise RehearsalError("INTEGRITY_FAILED")
         if self.conn.execute("PRAGMA foreign_key_check").fetchone():
@@ -147,11 +165,11 @@ class Engine:
 
     def snapshot(self):
         self.audit()
-        schema = self.conn.execute("SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name").fetchall()
+        schema = self.collect(self.conn.execute("SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name"))
         # Structural metadata avoids guessing WITHOUT ROWID from SQL strings.
         if sqlite3.sqlite_version_info < (3, 37, 0):
             raise RehearsalError("SQLITE_VERSION_UNSUPPORTED")
-        rowid_tables = {row[1]: not row[4] for row in self.conn.execute("PRAGMA main.table_list") if row[0] == "main"}
+        rowid_tables = {row[1]: not row[4] for row in self.collect(self.conn.execute("PRAGMA main.table_list")) if row[0] == "main"}
         tables = {}
         total = 0
         for kind, name, _, sql in schema:
@@ -162,7 +180,7 @@ class Engine:
             rowid_tracked = rowid_tables.get(name, False)
             projection = "*"
             if rowid_tracked:
-                declared = {row[1].casefold() for row in self.conn.execute("PRAGMA table_xinfo(" + quote(name) + ")")}
+                declared = {row[1].casefold() for row in self.collect(self.conn.execute("PRAGMA table_xinfo(" + quote(name) + ")"))}
                 alias = next((x for x in ("rowid", "_rowid_", "oid") if x not in declared), None)
                 if alias is None:
                     raise RehearsalError("ROWID_UNOBSERVABLE")
