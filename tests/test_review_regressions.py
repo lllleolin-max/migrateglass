@@ -40,6 +40,27 @@ class ReviewRegressions(unittest.TestCase):
         self.assertEqual(report["decision"], "ACCEPT")
         self.assertFalse(report["phases"]["before"]["snapshot"]["tables"]["messages"]["rowid_tracked"])
 
+    def test_contract_phase_typo_does_not_silently_skip(self):
+        self.create("CREATE TABLE invoices(amount INTEGER); INSERT INTO invoices VALUES(20);")
+        with self.assertRaisesRegex(ValueError, "phases"):
+            rehearse(self.path, "UPDATE invoices SET amount=0;", checks=[{"name": "positive", "sql": "SELECT count(*) FROM invoices WHERE amount<=0", "phases": ["aftre"]}])
+
+    def test_duplicate_consumer_names_cannot_overwrite_stable_result(self):
+        self.create("CREATE TABLE invoices(amount INTEGER); INSERT INTO invoices VALUES(20);")
+        with self.assertRaisesRegex(ValueError, "unique"):
+            rehearse(self.path, "UPDATE invoices SET amount=0;", consumers=[{"name": "critical", "sql": "SELECT amount FROM invoices", "stable": True}, {"name": "critical", "sql": "SELECT count(*) FROM invoices"}])
+
+    def test_contract_shapes_unknown_fields_and_aggregate_sql_limit(self):
+        self.create("CREATE TABLE x(value INTEGER);")
+        for kwargs in [
+            {"checks": {}}, {"consumers": [{"name": "x", "sql": "SELECT 1", "stabl": True}]},
+            {"checks": [{"name": "x", "sql": "SELECT 1", "phases": []}]},
+            {"checks": [{"name": "x", "sql": "SELECT 1", "expected": float("nan")}]},
+            {"consumers": [{"name": "x", "sql": "SELECT 1"}], "limits": Limits(sql_bytes=12)},
+        ]:
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                rehearse(self.path, "SELECT 1;", **kwargs)
+
 
 if __name__ == "__main__":
     unittest.main()

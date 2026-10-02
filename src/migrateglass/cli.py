@@ -17,6 +17,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         contract = json.loads(args.contract.read_text(encoding="utf-8")) if args.contract else {}
+        if type(contract) is not dict or contract.keys() - {"checks", "consumers"}:
+            raise ValueError("contract must contain only checks and consumers")
         result = rehearse(args.source, args.migration.read_text(encoding="utf-8"),
                           rollback=args.rollback.read_text(encoding="utf-8") if args.rollback else None,
                           checks=contract.get("checks"), consumers=contract.get("consumers"),
