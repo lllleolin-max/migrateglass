@@ -1,0 +1,4 @@
+{
+  "checks": [{"name": "positive_invoice_values", "sql": "SELECT count(*) FROM invoices WHERE cents<=0", "expected": 0}],
+  "consumers": [{"name": "account_invoice_totals", "sql": "SELECT account_id, sum(cents) AS total FROM invoices GROUP BY account_id", "stable": true}]
+}
