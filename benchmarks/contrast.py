@@ -3,12 +3,15 @@
 Not an Atlas benchmark: Atlas is a richer migration analyzer.
 """
 import json
+from contextlib import closing
 from pathlib import Path
 import re
 import statistics
+import sqlite3
 import sys
 import tempfile
 import time
+import platform
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples"))
 from make_fixture import create_fixture
@@ -33,13 +36,19 @@ def main():
     results, durations = [], []
     with tempfile.TemporaryDirectory() as temp:
         source = create_fixture(Path(temp) / "billing.db")
+        schema_only = Path(temp) / "empty-schema.db"
+        with closing(sqlite3.connect(source)) as original, closing(sqlite3.connect(schema_only)) as empty, empty:
+            for (sql,) in original.execute("SELECT sql FROM sqlite_schema WHERE type='table' AND sql IS NOT NULL ORDER BY name"):
+                empty.execute(sql)
         for name, up, down, expected in cases:
             start = time.perf_counter()
             report = rehearse(source, up, rollback=down, **contract)
             duration = time.perf_counter() - start
             durations.append(duration)
+            empty_report = rehearse(schema_only, up, rollback=down, **contract)
             results.append({"case": name, "expected_declared_policy": expected,
                             "lexical": lexical_lint(up), "rehearsal": report["decision"],
+                            "empty_schema_rehearsal": empty_report["decision"],
                             "findings": sorted({x["code"] for x in report["findings"]}),
                             "source_preserved": report["source_preserved"], "seconds": round(duration, 4)})
         ablation = {
@@ -47,10 +56,12 @@ def main():
             "no_rollback_memo_loss": rehearse(source, "UPDATE invoices SET note=NULL;", **contract)["decision"],
         }
     output = {"fixture": {"synthetic": True, "invoices": 5000, "accounts": 120},
-              "baseline": "regex DROP/DELETE/TRUNCATE only; not Atlas", "cases": results,
+              "environment": {"python": platform.python_version(), "sqlite": sqlite3.sqlite_version, "platform": platform.system()},
+              "baseline": "regex DROP/DELETE/TRUNCATE and same-engine empty-schema rehearsal; neither is Atlas", "cases": results,
               "ablation": ablation, "median_rehearsal_seconds": round(statistics.median(durations), 4),
               "policy_matches": sum(row["rehearsal"] == row["expected_declared_policy"] for row in results),
-              "lexical_matches": sum(row["lexical"] == row["expected_declared_policy"] for row in results)}
+              "lexical_matches": sum(row["lexical"] == row["expected_declared_policy"] for row in results),
+              "empty_schema_matches": sum(row["empty_schema_rehearsal"] == row["expected_declared_policy"] for row in results)}
     print(json.dumps(output, indent=2))
     assert output["policy_matches"] == len(cases)
     assert all(row["source_preserved"] for row in results)

@@ -6,7 +6,7 @@ Rehearse a SQLite migration on the data that will actually encounter it. Receive
 
 ## Install and try / 安装和演示
 
-Python 3.11+; no runtime dependencies. Run from this checkout:
+Python 3.11+ with SQLite >=3.37; no runtime dependencies. Run from this checkout:
 
 ```powershell
 py -3 -m venv .venv
@@ -39,11 +39,11 @@ report = rehearse(
 assert report["source_preserved"]
 ```
 
-Checks must return one scalar equal to `expected` (default zero violations). `phases` defaults to `before`, `after`, `rollback`; consumers run in each available phase. A consumer marked `stable` must retain its column names and result multiset after migration. Unmarked consumers only need to run. Row-loss budget defaults to zero and counts reductions under the same main-table name; table replacement may need an explicit budget and stronger business queries.
+Checks must return one scalar equal to `expected` (default zero violations). `phases` defaults to `before`, `after`, `rollback`; consumers run in each available phase. Names must be unique across the contract, unknown fields/phases reject, and expectations must be finite JSON scalars. A consumer marked `stable` must retain its column names and result multiset after migration. Unmarked consumers only need to run. Row-loss budget defaults to zero and counts reductions under the same main-table name; table replacement may need an explicit budget and stronger business queries. Snapshots include hidden rowids; tables shadowing all rowid aliases reject rather than certify unobservable state.
 
 ## Evidence and boundaries / 证据与边界
 
-`benchmarks/contrast.py` executes seven policies against disclosed synthetic data. Its regex baseline flags only DROP/DELETE/TRUNCATE and is **not Atlas**. It misses duplicate-data unique-index failure, a zero-value business violation, broken consumer SQL and same-schema rollback value loss. Removing the contract or rollback respectively changes the corresponding rejection to acceptance. The empty-table drop is a lexical false alarm. An unmodeled note transformation is deliberately accepted: no tool can infer a missing business contract from this fixture.
+`benchmarks/contrast.py` executes seven policies against disclosed synthetic data. Its regex baseline flags only DROP/DELETE/TRUNCATE; a second baseline executes the same engine, contracts and rollback against the same schema with no rows. Neither is **Atlas**. Populated rehearsal matches all seven declared policies; regex matches two and empty-schema rehearsal four. The data-dependent index failure, business violation and rollback loss disappear on empty data. Removing the contract or rollback respectively changes the corresponding rejection to acceptance. The empty-table drop is a lexical false alarm. An unmodeled note transformation is deliberately accepted: no tool can infer a missing business contract from this fixture. See [recorded local output](docs/contrast-results.json) and [verification](docs/VERIFICATION.md); this small designed corpus is not a population accuracy estimate.
 
 This is a complementary local workflow. [Atlas migration lint](https://atlasgo.io/versioned/lint) already analyzes destructive/incompatible changes, uses a development database, and supports policies. We do not claim features absent in Atlas or benchmark its product. MigrateGlass's demonstrated focus is actual SQLite fixture data, consumer result contracts and executed typed-row rollback equality. Primary-source comparison verified 2026-10-03; see [commercial rationale](docs/COMMERCIAL.md).
 

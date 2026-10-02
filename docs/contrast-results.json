@@ -1,0 +1,103 @@
+{
+  "fixture": {
+    "synthetic": true,
+    "invoices": 5000,
+    "accounts": 120
+  },
+  "environment": {
+    "python": "3.14.3",
+    "sqlite": "3.50.4",
+    "platform": "Windows"
+  },
+  "baseline": "regex DROP/DELETE/TRUNCATE and same-engine empty-schema rehearsal; neither is Atlas",
+  "cases": [
+    {
+      "case": "safe_index",
+      "expected_declared_policy": "ACCEPT",
+      "lexical": "ACCEPT",
+      "rehearsal": "ACCEPT",
+      "empty_schema_rehearsal": "ACCEPT",
+      "findings": [],
+      "source_preserved": true,
+      "seconds": 1.2033
+    },
+    {
+      "case": "duplicate_reference",
+      "expected_declared_policy": "REJECT",
+      "lexical": "ACCEPT",
+      "rehearsal": "REJECT",
+      "empty_schema_rehearsal": "ACCEPT",
+      "findings": [
+        "CONSTRAINT_FAILED"
+      ],
+      "source_preserved": true,
+      "seconds": 0.7716
+    },
+    {
+      "case": "zero_values",
+      "expected_declared_policy": "REJECT",
+      "lexical": "ACCEPT",
+      "rehearsal": "REJECT",
+      "empty_schema_rehearsal": "ACCEPT",
+      "findings": [
+        "CONSUMER_CHANGED",
+        "INVARIANT_FAILED"
+      ],
+      "source_preserved": true,
+      "seconds": 0.6999
+    },
+    {
+      "case": "rollback_memo_loss",
+      "expected_declared_policy": "REJECT",
+      "lexical": "ACCEPT",
+      "rehearsal": "REJECT",
+      "empty_schema_rehearsal": "ACCEPT",
+      "findings": [
+        "ROLLBACK_NOT_RESTORED"
+      ],
+      "source_preserved": true,
+      "seconds": 0.7906
+    },
+    {
+      "case": "consumer_rename",
+      "expected_declared_policy": "REJECT",
+      "lexical": "ACCEPT",
+      "rehearsal": "REJECT",
+      "empty_schema_rehearsal": "REJECT",
+      "findings": [
+        "CONSUMER_CHANGED",
+        "SQL_ERROR"
+      ],
+      "source_preserved": true,
+      "seconds": 0.7951
+    },
+    {
+      "case": "safe_empty_drop",
+      "expected_declared_policy": "ACCEPT",
+      "lexical": "REJECT",
+      "rehearsal": "ACCEPT",
+      "empty_schema_rehearsal": "ACCEPT",
+      "findings": [],
+      "source_preserved": true,
+      "seconds": 0.9737
+    },
+    {
+      "case": "unmodeled_note_policy",
+      "expected_declared_policy": "ACCEPT",
+      "lexical": "ACCEPT",
+      "rehearsal": "ACCEPT",
+      "empty_schema_rehearsal": "ACCEPT",
+      "findings": [],
+      "source_preserved": true,
+      "seconds": 0.778
+    }
+  ],
+  "ablation": {
+    "no_contract_zero_values": "ACCEPT",
+    "no_rollback_memo_loss": "ACCEPT"
+  },
+  "median_rehearsal_seconds": 0.7906,
+  "policy_matches": 7,
+  "lexical_matches": 2,
+  "empty_schema_matches": 4
+}
