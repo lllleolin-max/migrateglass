@@ -148,6 +148,10 @@ class Engine:
     def snapshot(self):
         self.audit()
         schema = self.conn.execute("SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name").fetchall()
+        # Structural metadata avoids guessing WITHOUT ROWID from SQL strings.
+        if sqlite3.sqlite_version_info < (3, 37, 0):
+            raise RehearsalError("SQLITE_VERSION_UNSUPPORTED")
+        rowid_tables = {row[1]: not row[4] for row in self.conn.execute("PRAGMA main.table_list") if row[0] == "main"}
         tables = {}
         total = 0
         for kind, name, _, sql in schema:
@@ -155,11 +159,20 @@ class Engine:
                 continue
             if sql and "CREATE VIRTUAL TABLE" in sql.upper():
                 raise RehearsalError("VIRTUAL_TABLE_UNSUPPORTED")
-            rows, columns = self.guarded("SELECT * FROM " + quote(name), readonly=True)
+            rowid_tracked = rowid_tables.get(name, False)
+            projection = "*"
+            if rowid_tracked:
+                declared = {row[1].casefold() for row in self.conn.execute("PRAGMA table_xinfo(" + quote(name) + ")")}
+                alias = next((x for x in ("rowid", "_rowid_", "oid") if x not in declared), None)
+                if alias is None:
+                    raise RehearsalError("ROWID_UNOBSERVABLE")
+                projection = quote(alias) + ",*"
+            rows, columns = self.guarded("SELECT " + projection + " FROM " + quote(name), readonly=True)
             total += len(rows)
             if total > self.limits["rows"]:
                 raise RehearsalError("ROW_LIMIT")
-            tables[name] = {"rows": len(rows), "columns": columns, "data_sha256": digest_rows(rows)}
+            tables[name] = {"rows": len(rows), "columns": columns[1:] if rowid_tracked else columns,
+                            "rowid_tracked": rowid_tracked, "data_sha256": digest_rows(rows)}
         return {"schema_sha256": digest_rows(schema), "tables": tables,
                 "user_version": self.conn.execute("PRAGMA user_version").fetchone()[0]}
 
