@@ -54,3 +54,89 @@ Remove-Item Env:PYTHONPATH
 ```
 
 Expected failures respectively at the initial, round-1 and round-2 before commits. Final implementation passes all three. These are reviewed corrections after a working full initial implementation. Documentation/evidence commits are not counted as additional rounds. Independent scores, public publication and remote CI results remain separate verification tasks.
+
+## v0.1.1 strict contract update — three additional self-review rounds
+
+Executed on 2026-10-03, Windows/Python 3.14.3. The three original substantive
+cycles and old independent review remain unchanged. These additional rounds
+include the original duplicate-key correction, two edge cases found in the new
+reader, and an installed integration review with no further product defect.
+They are not represented as three new baseline bugs or three independent reviews.
+
+### Round 1 — reproduce and reject ambiguous JSON contracts
+
+Before: `7268a81ea3fbeddd6b08d74ac3e69cbafdad9d9e`, v0.1.0. The parallel remote
+README change `444831585381ff42f1ce2cbca5ae892f8bd95a47` was fetched and normally
+fast-forwarded before implementation; its cross-platform instructions remain.
+The exact old source was separately exported using
+`git -c core.autocrlf=false archive`, built as an ordinary wheel and installed
+into a fresh environment. Raw Git blobs, LF archive, wheel and isolated site
+bytes matched for all five old modules. **28 installed tests passed, 9.782s.**
+
+The actual registered CLI ran identical source/migration data against two
+contracts. Ordinary `checks=[positive]` returned **REJECT/2**, with the after
+invariant false. `{"checks":[positive],"checks":[]}` returned **ACCEPT/0** with
+no invariant. All source, migration, rollback and both contract hashes stayed
+unchanged. This reproduces the old disclosed P2 file ambiguity, not a new
+privacy, deployment or supported-format safety claim.
+
+Correction: `ec04247c33bbdb5fdde050b6d990a5f7d9d85f24`. Shared SDK/CLI
+`read_contract` rejects duplicate keys throughout the JSON and validates UTF-8,
+BOM/constants, nesting and schema before worker invocation. Contract and SQL
+file admission respects explicit budgets; aggregate embedded SQL is still
+included in the original SQL budget. Invalid CLI errors omit payloads/paths.
+Nine new contract tests passed; **37 source tests passed, 5.837s**. Tests verify
+no worker or source hashing on invalid file contracts, exact UTF-8 boundaries,
+late malformed input, file growth and ordinary fail/safe restoration behavior.
+
+The first test helper forgot that a SQLite context manager does not close its
+connection, causing Windows cleanup errors. Its tiny SQL cap also constrained
+existing trusted SQLite audit statements and correctly produced DATABASE_ERROR.
+Original helper/log were retained in ignored builder evidence. Corrected tests
+close connections and use a realistically sized exact aggregate SQL boundary;
+no product correction is attributed to either harness mistake.
+
+### Round 2 — resource and semantic composition of the new reader
+
+Reviewed exact round-1 code `ec04247`. An actual empty `{}` contract with an
+exact two-byte budget raised ValueError because normalization added empty lists.
+A tiny valid file with a positive `contract_bytes=10**100` budget raised
+OverflowError when that budget was passed directly as a platform read size.
+Expected-before observations and input bytes were retained separately.
+
+Correction: `078f5ba0a6ad0387c916375ba53443a98af41330`. Empty lists are omitted
+when accounting normalized SDK JSON, so the minimal contract remains `{}`.
+Fixed-size reads of at most 64 KiB avoid read-size overflow and allow at most
+one over-budget sentinel byte. Both exact prior cases now accept, with input
+bytes unchanged. Two added regressions and all **39 source tests passed,
+6.699s**. This corrects defects found in the new implementation, without raising
+default budgets, weakening query validation or inventing extra old-version bugs.
+
+### Round 3 — ordinary installed SDK, CLI and examples
+
+At `91904b8212e3504bb2c92d463d82c36bf22aabc6` (v0.1.1), a new canonical LF
+archive, ordinary wheel and fresh environment matched all six raw Git package
+modules exactly through installed site bytes. **39 installed tests passed,
+12.232s**, including all original 28 and eleven contract/resource tests.
+Actual CLI repeat: ordinary positive check remains **REJECT/2**; duplicate
+contract now **INVALID/1**. All five input hashes match the old reproduction.
+
+The installed fixture example generated 5,000 invoices and 120 accounts.
+Actual sysconfig CLI under `PYTHONUTF8=0/1` returned **ACCEPT/0, RESTORED**;
+SDK `read_contract`→`rehearse` produced equal phase snapshots and restoration.
+Source, safe migration, rollback and contract bytes stayed unchanged. Actual
+duplicate CLI returned INVALID/1. The seven-case contrast passed: populated
+**7/7**, lexical **2/7**, empty-schema **4/7**; both no-contract/no-rollback
+ablations still change the corresponding rejection to acceptance. Recorded
+median 0.3983s is an environment observation, not a performance improvement.
+
+An initial integration helper assumed the fixture generator printed UTF-8 JSON;
+it actually prints a human path in native encoding. The example had exited 0
+before the helper's decoder failed. Original helper and generated fixture are
+retained; a corrected helper checks its exit and parses only CLI JSON. This is
+not a product encoding defect. No further product defect was found in this round.
+
+The final iteration-log commit changes documentation only. Final archive/wheel
+association must bind its exact SHA, rather than inherit a claim from a changed
+artifact. Builder observations are not independent scores, publication, remote
+CI, customer adoption or income. Old independent scores belong to the old SHA.
