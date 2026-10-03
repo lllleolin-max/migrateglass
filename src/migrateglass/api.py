@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+from .inputs import parse_contract, read_utf8
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class Limits:
     statements: int = 1000
     value_bytes: int = 1024 * 1024
     result_bytes: int = 16 * 1024 * 1024
+    contract_bytes: int = 1024 * 1024
 
     def validate(self):
         if isinstance(self.seconds, bool) or not isinstance(self.seconds, (int, float)) or not math.isfinite(self.seconds) or not 0 < self.seconds <= 600:
@@ -75,6 +77,36 @@ def validate_contract(checks, consumers, limits):
     return sql_bytes
 
 
+def read_contract(path: str | Path, *, limits: Limits | None = None) -> dict:
+    """Read a strict bounded UTF-8 JSON contract, before worker or staging.
+
+    Duplicate object keys, BOM, nonfinite scalars and nesting over 16 reject.
+    Raw file bytes use contract_bytes; decoded query SQL still uses sql_bytes.
+    Missing lists mean empty lists; an explicitly supplied null is invalid.
+    """
+    limits = limits or Limits()
+    limits.validate()
+    contract = parse_contract(read_utf8(path, limits.contract_bytes))
+    checks, consumers = contract.get("checks", []), contract.get("consumers", [])
+    sql_bytes = validate_contract(checks, consumers, limits)
+    if sql_bytes > limits.sql_bytes:
+        raise ValueError("sql_bytes limit exceeded")
+    _validate_contract_bytes(checks, consumers, limits)
+    return {"checks": checks, "consumers": consumers}
+
+
+def _validate_contract_bytes(checks, consumers, limits):
+    # SDK objects already exist in caller memory. Their normalized compact UTF-8
+    # JSON must fit the same budget; this is admission, not an OS RSS limit.
+    try:
+        size = len(json.dumps({"checks": checks, "consumers": consumers}, ensure_ascii=False,
+                              allow_nan=False, separators=(",", ":")).encode("utf-8"))
+    except (ValueError, UnicodeError, RecursionError):
+        raise ValueError("contract must be finite UTF-8 JSON") from None
+    if size > limits.contract_bytes:
+        raise ValueError("contract_bytes limit exceeded")
+
+
 def rehearse(source: str | Path, migration: str, *, rollback: str | None = None,
              checks: list[dict] | None = None, consumers: list[dict] | None = None,
              limits: Limits | None = None, row_loss_budget: int = 0) -> dict:
@@ -101,6 +133,7 @@ def rehearse(source: str | Path, migration: str, *, rollback: str | None = None,
     checks = [] if checks is None else checks
     consumers = [] if consumers is None else consumers
     contract_bytes = validate_contract(checks, consumers, limits)
+    _validate_contract_bytes(checks, consumers, limits)
     if sum(len(x.encode("utf-8")) for x in (migration, rollback or "")) + contract_bytes > limits.sql_bytes:
         raise ValueError("sql_bytes limit exceeded")
     payload = {"source": str(path), "migration": migration, "rollback": rollback,
