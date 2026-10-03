@@ -15,9 +15,16 @@ def read_utf8(path, max_bytes):
     if info.st_size > max_bytes:
         raise ValueError("input byte limit exceeded")
     with path.open("rb") as stream:
-        data = stream.read(max_bytes + 1)
-    if len(data) > max_bytes:
-        raise ValueError("input byte limit exceeded")
+        data = bytearray()
+        while True:
+            # Fixed chunks avoid a platform read-size overflow even when a caller
+            # supplies a large positive budget. At most one sentinel byte exceeds it.
+            chunk = stream.read(min(64 * 1024, max_bytes - len(data) + 1))
+            if not chunk:
+                break
+            data.extend(chunk)
+            if len(data) > max_bytes:
+                raise ValueError("input byte limit exceeded")
     try:
         return data.decode("utf-8")
     except UnicodeError:

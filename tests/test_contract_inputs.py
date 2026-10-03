@@ -98,8 +98,8 @@ class ContractInputTests(unittest.TestCase):
     def test_contract_byte_boundary_multibyte_and_late_invalid(self):
         data = json.dumps({"consumers": [{"name": "中", "sql": "SELECT 1"}]}, ensure_ascii=False,
                           separators=(",", ":")).encode("utf-8")
-        # The normalized SDK object adds the empty checks list. Include that explicit
-        # list here so raw and normalized byte lengths have the same exact boundary.
+        # Count exact raw-file bytes, including the optional empty list, separately
+        # from normalized SDK JSON (which omits empty lists).
         data = b'{"checks":[],' + data[1:]
         self.contract.write_bytes(data)
         for limit in (len(data), len(data) + 1):
@@ -165,6 +165,18 @@ class ContractInputTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     read_contract(self.contract, limits=Limits(contract_bytes=cap))
             worker.assert_not_called()
+
+    def test_empty_lists_omit_normalization_overhead_at_exact_raw_boundary(self):
+        self.contract.write_bytes(b'{}')
+        self.assertEqual(read_contract(self.contract, limits=Limits(contract_bytes=2)), {"checks": [], "consumers": []})
+        with self.assertRaises(ValueError):
+            read_contract(self.contract, limits=Limits(contract_bytes=1))
+        result = rehearse(self.source, "SELECT 1;", limits=Limits(contract_bytes=2))
+        self.assertEqual(result["decision"], "ACCEPT")
+
+    def test_large_positive_budget_does_not_overflow_platform_read_size(self):
+        self.contract.write_bytes(b'{}')
+        self.assertEqual(read_contract(self.contract, limits=Limits(contract_bytes=10 ** 100)), {"checks": [], "consumers": []})
 
 
 if __name__ == "__main__":

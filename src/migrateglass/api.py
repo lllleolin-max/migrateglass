@@ -99,7 +99,12 @@ def _validate_contract_bytes(checks, consumers, limits):
     # SDK objects already exist in caller memory. Their normalized compact UTF-8
     # JSON must fit the same budget; this is admission, not an OS RSS limit.
     try:
-        size = len(json.dumps({"checks": checks, "consumers": consumers}, ensure_ascii=False,
+        contract = {}
+        if checks:
+            contract["checks"] = checks
+        if consumers:
+            contract["consumers"] = consumers
+        size = len(json.dumps(contract, ensure_ascii=False,
                               allow_nan=False, separators=(",", ":")).encode("utf-8"))
     except (ValueError, UnicodeError, RecursionError):
         raise ValueError("contract must be finite UTF-8 JSON") from None
