@@ -8,4 +8,21 @@ Byte-for-byte source preservation is checked at the parent boundary, including t
 
 Limits are operational guardrails, not hard process-memory isolation. Reduce source/value/row/step limits and run the process in your own OS/container isolation when adversarial resource exposure matters. Interrupted workers lose the disposable clone. An accepted result is no guarantee about untested data or missing business requirements.
 
+The v0.1.1 contract-file boundary rejects duplicate keys throughout the JSON,
+nonfinite constants/expectations, invalid UTF-8, a UTF-8 BOM, wrong schema/types
+and nesting deeper than 16 containers before launching a worker or staging a
+clone. The SDK's `read_contract` is the same reader used by the CLI. A size check
+precedes parsing; capped chunk reads still reject growth beyond the configured
+budget. These are admission guards, not protection against concurrent hostile
+path replacement or an untrusted Python host.
+
+The default 1 MiB contract budget accounts for raw file bytes and normalized
+SDK JSON separately; empty lists are omitted from normalized JSON. The existing
+1 MiB SQL budget still aggregates migration, rollback and embedded query UTF-8
+bytes. Embedded SQL therefore consumes both relevant budgets. CLI SQL files are
+bounded before reading, and invalid-input errors omit SQL, row contents and
+paths. Validation, input reading and parent hashes remain outside the worker's
+wall timeout. Caller-created SDK objects, JSON representations and SQLite
+internal memory are not bounded by an OS RSS limit.
+
 Report a suspected bypass or false acceptance using a minimal synthetic database, SQL, Python/SQLite versions and JSON decision. Use a private GitHub security report when the repository is published; do not include production rows, secrets or customer files. Public issues are suitable for non-sensitive reproducible limitations. Security handling capacity and response SLAs are not promised.

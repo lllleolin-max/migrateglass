@@ -75,6 +75,45 @@ print(report["decision"])  # ACCEPT for the generated synthetic fixture
 
 Checks must return one scalar equal to `expected` (default zero violations). `phases` defaults to `before`, `after`, `rollback`; consumers run in each available phase. Names must be unique across the contract, unknown fields/phases reject, and expectations must be finite JSON scalars. A consumer marked `stable` must retain its column names and result multiset after migration. Unmarked consumers only need to run. Row-loss budget defaults to zero and counts reductions under the same main-table name; table replacement may need an explicit budget and stronger business queries. Snapshots include hidden rowids; tables shadowing all rowid aliases reject rather than certify unobservable state.
 
+In v0.1.1, contract files are strict UTF-8 JSON objects containing optional
+`checks` and `consumers` lists. A UTF-8 BOM, duplicate object keys at any nesting
+level (including escaped spellings of the same key), NaN/Infinity, excessive
+nesting, unknown fields and wrong field types are invalid. Explicit `null` lists
+are invalid; an absent list means empty. Invalid contracts return CLI
+`INVALID`/exit **1** before a worker starts or a clone is staged. A valid check
+that fails still returns `REJECT`/exit **2**. Errors omit SQL, row contents and
+filesystem paths.
+
+The SDK can use the exact CLI file reader rather than another JSON decoder:
+
+```python
+from migrateglass import Limits, read_contract, rehearse
+
+limits = Limits(sql_bytes=1024 * 1024, contract_bytes=1024 * 1024)
+contract = read_contract("examples/contract.json", limits=limits)
+report = rehearse("demo-output/billing.db", "CREATE INDEX by_account ON invoices(account_id);",
+                  rollback="DROP INDEX by_account;", limits=limits, **contract)
+```
+
+`Limits.contract_bytes` defaults to **1 MiB** and limits both raw contract-file
+bytes (including whitespace) and the compact UTF-8 JSON representation of SDK
+contract lists. Empty lists are omitted in this normalized representation, so
+an empty contract is `{}`. The raw file size is checked before reading/parsing;
+reads use at most 64 KiB per chunk and retain at most one extra sentinel byte.
+JSON nesting is checked before parsing and permits at most **16 containers**;
+braces inside strings do not count. The supported contract schema is shallower.
+
+The existing **1 MiB** `Limits.sql_bytes` remains a separate aggregate budget for
+the UTF-8 bytes of migration SQL, rollback SQL and every check/consumer query.
+Contract syntax/metadata counts toward `contract_bytes`; embedded SQL counts
+toward both budgets. CLI `--contract-bytes` and `--sql-bytes` override these
+defaults. Each SQL file is admitted against the remaining SQL budget before
+reading. SQLite also uses `sql_bytes` as its statement-length limit, including
+trusted audit queries, so an impractically small value can reject a rehearsal.
+These limits bound admission, not total process memory or input validation time.
+SDK objects already exist in caller memory; JSON decoding, snapshots and SQLite
+allocations still need operational isolation for hostile resource exposure.
+
 ## Evidence and boundaries / 证据与边界
 
 `benchmarks/contrast.py` executes seven policies against disclosed synthetic data. Its regex baseline flags only DROP/DELETE/TRUNCATE; a second baseline executes the same engine, contracts and rollback against the same schema with no rows. Neither is **Atlas**. Populated rehearsal matches all seven declared policies; regex matches two and empty-schema rehearsal four. The data-dependent index failure, business violation and rollback loss disappear on empty data. Removing the contract or rollback respectively changes the corresponding rejection to acceptance. The empty-table drop is a lexical false alarm. An unmodeled note transformation is deliberately accepted: no tool can infer a missing business contract from this fixture. See [recorded local output](docs/contrast-results.json) and [verification](docs/VERIFICATION.md); this small designed corpus is not a population accuracy estimate.
