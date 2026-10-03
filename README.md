@@ -6,18 +6,46 @@ Rehearse a SQLite migration on the data that will actually encounter it. Receive
 
 ## Install and try / 安装和演示
 
-Python 3.11+ with SQLite >=3.37; no runtime dependencies. Run from this checkout:
+Requires SQLite >=3.37 in addition to Python 3.11+.
+
+Install from a source checkout with Python 3.11+:
+
+```sh
+git clone https://github.com/lllleolin-max/migrateglass.git
+cd migrateglass
+```
+
+Linux/macOS:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install .
+.venv/bin/python examples/make_fixture.py demo-output/billing.db
+```
+
+Windows PowerShell:
 
 ```powershell
 py -3 -m venv .venv
-.venv/Scripts/python -m pip install .
-.venv/Scripts/python examples/make_fixture.py demo-output/billing.db
-.venv/Scripts/python -m migrateglass.cli demo-output/billing.db examples/safe.sql --rollback examples/safe_rollback.sql --contract examples/contract.json
-.venv/Scripts/python -m unittest discover -s tests -v
-.venv/Scripts/python benchmarks/contrast.py
+.venv\Scripts\python.exe -m pip install .
+.venv\Scripts\python.exe examples/make_fixture.py demo-output/billing.db
 ```
 
-On Linux/macOS replace `.venv/Scripts/python` with `.venv/bin/python` and `py -3` with `python3`. The installed `migrateglass` command runs the same CLI.
+In the remaining examples, `python` means this environment's interpreter:
+`.venv/bin/python` on Linux/macOS or `.venv\Scripts\python.exe` on Windows.
+The runtime uses the standard library; source installation may download build
+dependencies. No PyPI release is required for these instructions.
+
+Rehearse the safe migration and its rollback on that synthetic database:
+
+```sh
+python -m migrateglass.cli demo-output/billing.db examples/safe.sql --rollback examples/safe_rollback.sql --contract examples/contract.json
+```
+
+The installed `migrateglass` command runs the same CLI. The fixture generator
+refuses to overwrite an existing database; use a new path for another run and
+pass that same path to the CLI. Optional development checks:
+`python -m unittest discover -s tests -v` and `python benchmarks/contrast.py`.
 
 The synthetic fixture contains 5,000 invoices and 120 accounts. The safe index migration returns `decision: ACCEPT`, `source_preserved: true`, `rollback: RESTORED`. CLI exit codes: **0** accepted, **2** rejected rehearsal, **1** invalid invocation. JSON goes to stdout; invocation errors go to stderr.
 
@@ -25,11 +53,16 @@ The synthetic fixture contains 5,000 invoices and 120 accounts. The safe index m
 
 ## SDK
 
+Run after generating the fixture above. The CLI inputs are a quiescent SQLite
+file, UTF-8 migration/rollback SQL files and an optional local JSON contract.
+The SDK instead receives SQL strings and contract lists; both return the same
+bounded report. Neither applies the migration to the source database.
+
 ```python
 from migrateglass import Limits, rehearse
 
 report = rehearse(
-    "billing.db",
+    "demo-output/billing.db",
     "CREATE INDEX by_account ON invoices(account_id);",
     rollback="DROP INDEX by_account;",
     checks=[{"name": "positive", "sql": "SELECT count(*) FROM invoices WHERE cents<=0", "expected": 0}],
@@ -37,6 +70,7 @@ report = rehearse(
     limits=Limits(seconds=8, vm_steps=5_000_000),
 )
 assert report["source_preserved"]
+print(report["decision"])  # ACCEPT for the generated synthetic fixture
 ```
 
 Checks must return one scalar equal to `expected` (default zero violations). `phases` defaults to `before`, `after`, `rollback`; consumers run in each available phase. Names must be unique across the contract, unknown fields/phases reject, and expectations must be finite JSON scalars. A consumer marked `stable` must retain its column names and result multiset after migration. Unmarked consumers only need to run. Row-loss budget defaults to zero and counts reductions under the same main-table name; table replacement may need an explicit budget and stronger business queries. Snapshots include hidden rowids; tables shadowing all rowid aliases reject rather than certify unobservable state.
